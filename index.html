@@ -1,0 +1,722 @@
+import { useState, useMemo } from "react";
+
+/* ── CONSTANTES ────────────────────────────────────────────────────────── */
+const LIMITE_CREDITO = 5000;
+const CAT_ANUAL = 79.9;
+const T_MENS = Math.pow(1 + CAT_ANUAL / 100, 1 / 12) - 1;
+const T_DIARIA = T_MENS / 30;
+const T_MOR = T_DIARIA * 2;
+const DIA_CORTE = 10;
+const DIAS_LIMITE = 20;
+const FECHA_INICIO = new Date(2025, 0, 12);
+
+const COLORES = [
+  { id:"aurora",   label:"Aurora",     grad:"linear-gradient(140deg,#5b21b6,#7c3aed 60%,#a855f7)" },
+  { id:"oceano",   label:"Océano",     grad:"linear-gradient(140deg,#1e40af,#2563eb 60%,#60a5fa)" },
+  { id:"noche",    label:"Medianoche", grad:"linear-gradient(140deg,#0f172a,#1e293b 55%,#334155)" },
+  { id:"cielo",    label:"Cielo",      grad:"linear-gradient(140deg,#0369a1,#0ea5e9 60%,#7dd3fc)" },
+  { id:"lila",     label:"Lila",       grad:"linear-gradient(140deg,#6d28d9,#9333ea 60%,#c084fc)" },
+];
+
+const PRODUCTOS = [
+  { id:1,  nombre:"AirPods Pro",        precio:3499, cat:"Tech",       ico:"🎧", tienda:"iShop MX"   },
+  { id:2,  nombre:"Sudadera Nike",      precio:850,  cat:"Ropa",       ico:"👕", tienda:"Nike MX"    },
+  { id:3,  nombre:"Spotify 3 meses",   precio:165,  cat:"Digital",    ico:"🎵", tienda:"Spotify"    },
+  { id:4,  nombre:"Curso Udemy",       precio:299,  cat:"Educación",  ico:"📚", tienda:"Udemy"      },
+  { id:5,  nombre:"Tenis Adidas",      precio:1200, cat:"Ropa",       ico:"👟", tienda:"Adidas MX"  },
+  { id:6,  nombre:"Nintendo Switch",   precio:4999, cat:"Tech",       ico:"🎮", tienda:"Best Buy MX"},
+  { id:7,  nombre:"Pack Libros ×3",    precio:450,  cat:"Educación",  ico:"📖", tienda:"El Sótano"  },
+  { id:8,  nombre:"Gift Card Starbucks",precio:200, cat:"Comida",     ico:"☕", tienda:"Starbucks"  },
+  { id:9,  nombre:"Pizza Domino's ×2", precio:289,  cat:"Comida",     ico:"🍕", tienda:"Domino's"   },
+  { id:10, nombre:"Funda celular",      precio:399, cat:"Accesorios", ico:"📱", tienda:"Amazon MX"  },
+];
+
+const PLAZOS = [
+  { n:1,  tipo:"contado", label:"Contado",  tasa:0,    info:"Sin cargos adicionales" },
+  { n:3,  tipo:"msi",     label:"3 MSI",    tasa:0,    info:"Sin intereses"          },
+  { n:6,  tipo:"msi",     label:"6 MSI",    tasa:0,    info:"Sin intereses"          },
+  { n:9,  tipo:"mci",     label:"9 MCI",    tasa:0.04, info:"4% mensual sobre saldo" },
+  { n:12, tipo:"mci",     label:"12 MCI",   tasa:0.04, info:"4% mensual sobre saldo" },
+];
+
+/* ── UTILIDADES ────────────────────────────────────────────────────────── */
+const addDias = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const difDias = (a, b) => Math.floor((b - a) / 864e5);
+const fechaLarga = d => d.toLocaleDateString("es-MX", { day:"numeric", month:"long", year:"numeric" });
+const fechaCorta = d => d.toLocaleDateString("es-MX", { day:"numeric", month:"short" });
+const mxn = n => new Intl.NumberFormat("es-MX", { style:"currency", currency:"MXN" }).format(n);
+
+const getCorteAnterior = d =>
+  d.getDate() >= DIA_CORTE
+    ? new Date(d.getFullYear(), d.getMonth(), DIA_CORTE)
+    : new Date(d.getFullYear(), d.getMonth() - 1, DIA_CORTE);
+
+const getProximoCorte = d =>
+  d.getDate() < DIA_CORTE
+    ? new Date(d.getFullYear(), d.getMonth(), DIA_CORTE)
+    : new Date(d.getFullYear(), d.getMonth() + 1, DIA_CORTE);
+
+/* ── TARJETA VISUAL ────────────────────────────────────────────────────── */
+function TarjetaVisual({ nombre, colorId, ultimos4 }) {
+  const col = COLORES.find(c => c.id === colorId) || COLORES[0];
+  return (
+    <div style={{
+      width:"100%", maxWidth:340, aspectRatio:"1.586/1", borderRadius:18,
+      background:col.grad, color:"#fff", padding:"18px 22px",
+      boxSizing:"border-box", position:"relative", overflow:"hidden",
+      userSelect:"none", boxShadow:"0 20px 48px rgba(0,0,0,0.28)", fontFamily:"monospace",
+    }}>
+      <div style={{ position:"absolute", top:-40, right:-40, width:190, height:190, borderRadius:"50%", background:"rgba(255,255,255,0.07)" }}/>
+      <div style={{ position:"absolute", bottom:-65, left:-30, width:230, height:230, borderRadius:"50%", background:"rgba(255,255,255,0.05)" }}/>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+        <div>
+          <div style={{ fontSize:12, fontWeight:700, fontFamily:"sans-serif", letterSpacing:2 }}>EDUCARD</div>
+          <div style={{ fontSize:8, opacity:0.6, fontFamily:"sans-serif", letterSpacing:1 }}>SIMULADOR FINANCIERO</div>
+        </div>
+        <div style={{ width:38, height:28, borderRadius:4, background:"linear-gradient(135deg,#f6d743,#c49b15)", border:"1px solid rgba(255,255,255,0.4)", display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:1.5, padding:4, boxSizing:"border-box" }}>
+          {[...Array(6)].map((_,i) => <div key={i} style={{ background:"rgba(0,0,0,0.25)", borderRadius:1 }}/>)}
+        </div>
+      </div>
+      <div style={{ fontSize:15, letterSpacing:3.5, marginBottom:16, opacity:0.95 }}>
+        •••• &nbsp;•••• &nbsp;•••• &nbsp;{ultimos4 || "0000"}
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+        <div>
+          <div style={{ fontSize:8, opacity:0.6, fontFamily:"sans-serif", letterSpacing:1.5, textTransform:"uppercase", marginBottom:2 }}>Titular</div>
+          <div style={{ fontSize:12, fontWeight:700, fontFamily:"sans-serif", letterSpacing:1.5, textTransform:"uppercase" }}>{(nombre||"TU NOMBRE").slice(0,22)}</div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:8, opacity:0.6, fontFamily:"sans-serif", letterSpacing:1.5, textTransform:"uppercase", marginBottom:2 }}>Válida</div>
+          <div style={{ fontSize:12, fontFamily:"sans-serif" }}>12/28</div>
+        </div>
+      </div>
+      <div style={{ position:"absolute", bottom:14, right:18, display:"flex" }}>
+        <div style={{ width:24, height:24, borderRadius:"50%", background:"rgba(230,75,75,0.8)" }}/>
+        <div style={{ width:24, height:24, borderRadius:"50%", background:"rgba(240,160,0,0.8)", marginLeft:-9 }}/>
+      </div>
+    </div>
+  );
+}
+
+/* ── ESTILOS BASE ──────────────────────────────────────────────────────── */
+const S = {
+  card: (x={}) => ({ background:"#fff", borderRadius:14, padding:"16px 18px", boxShadow:"0 2px 14px rgba(0,0,0,0.07)", ...x }),
+  prim: (x={}) => ({ padding:"9px 16px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#7c3aed,#6d28d9)", color:"white", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'Outfit',sans-serif", ...x }),
+  sec:  (x={}) => ({ padding:"9px 14px", borderRadius:10, border:"1px solid #e5e7eb", background:"white", color:"#374151", fontSize:13, cursor:"pointer", fontFamily:"'Outfit',sans-serif", ...x }),
+  tab:  (a)    => ({ padding:"8px 14px", borderRadius:8, border:"none", cursor:"pointer", fontFamily:"'Outfit',sans-serif", fontSize:13, fontWeight:500, whiteSpace:"nowrap", background:a?"linear-gradient(135deg,#7c3aed,#6d28d9)":"transparent", color:a?"white":"#6b7280" }),
+  inp:  { width:"100%", padding:"10px 14px", borderRadius:10, border:"2px solid #e5e7eb", fontSize:14, fontFamily:"'Outfit',sans-serif", outline:"none", boxSizing:"border-box", transition:"border-color 0.2s" },
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   COMPONENTE PRINCIPAL
+══════════════════════════════════════════════════════════════════════════ */
+export default function EduCardSim() {
+  const [pantalla, setPantalla] = useState("setup");
+  const [inputNombre, setInputNombre] = useState("");
+  const [colorElegido, setColorElegido] = useState("aurora");
+  const [perfil, setPerfil] = useState(null);
+
+  const [fecha, setFecha]         = useState(new Date(FECHA_INICIO));
+  const [compras, setCompras]     = useState([]);
+  const [pagos, setPagos]         = useState([]);
+  const [tab, setTab]             = useState("tarjeta");
+  const [filtro, setFiltro]       = useState("Todos");
+  const [checkout, setCheckout]   = useState(null);
+  const [plazo, setPlazo]         = useState(PLAZOS[0]);
+  const [toast, setToast]         = useState(null);
+  const [catSaldo, setCatSaldo]   = useState(2000);
+  const [catDias, setCatDias]     = useState(30);
+  const [inputPago, setInputPago] = useState("");
+
+  /* ── Cómputos derivados ──────────────────────────────────────────────── */
+  const ultimos4 = useMemo(() => {
+    if (!perfil) return "0000";
+    const h = perfil.nombre.split("").reduce((a, c) => a * 31 + c.charCodeAt(0), 17);
+    return String(Math.abs(h) % 10000).padStart(4, "0");
+  }, [perfil]);
+
+  const saldoTotal = useMemo(() => {
+    const bruto = compras.reduce((s, c) => {
+      const total = c.tipo === "mci" ? c.monto * (1 + c.tasa * c.n) : c.monto;
+      return s + total;
+    }, 0);
+    const pagado = pagos.reduce((s, p) => s + p.monto, 0);
+    return Math.max(0, bruto - pagado);
+  }, [compras, pagos]);
+
+  const disponible     = Math.max(0, LIMITE_CREDITO - saldoTotal);
+  const corteAnt       = getCorteAnterior(fecha);
+  const proximoCorte   = getProximoCorte(fecha);
+  const fechaLimite    = addDias(corteAnt, DIAS_LIMITE);
+  const estaVencido    = fecha > fechaLimite && saldoTotal > 0;
+  const diasVencidos   = estaVencido ? difDias(fechaLimite, fecha) : 0;
+  const intereses      = estaVencido ? saldoTotal * T_MOR * diasVencidos : 0;
+  const totalDeuda     = saldoTotal + intereses;
+  const pagoMin        = Math.max(200, totalDeuda * 0.015 + totalDeuda * T_MENS);
+
+  /* ── Acciones ────────────────────────────────────────────────────────── */
+  const toast$ = (msg, tipo="ok") => { setToast({ msg, tipo }); setTimeout(()=>setToast(null), 3500); };
+
+  const activar = () => {
+    if (!inputNombre.trim()) { toast$("Escribe tu nombre para continuar","err"); return; }
+    setPerfil({ nombre: inputNombre.trim().toUpperCase(), color: colorElegido });
+    setPantalla("app");
+  };
+
+  const confirmar = () => {
+    if (!checkout) return;
+    if (checkout.precio > disponible) { toast$("Crédito insuficiente","err"); return; }
+    const totalCosto = plazo.tipo === "mci" ? checkout.precio * (1 + plazo.tasa * plazo.n) : checkout.precio;
+    const mensualidad = plazo.n === 1 ? totalCosto : totalCosto / plazo.n;
+    setCompras(prev => [...prev, { id:Date.now(), nombre:checkout.nombre, tienda:checkout.tienda, ico:checkout.ico, monto:checkout.precio, fecha:new Date(fecha), n:plazo.n, tipo:plazo.tipo, tasa:plazo.tasa, mensualidad }]);
+    toast$(`✅ Compra: ${checkout.nombre}`);
+    setCheckout(null); setPlazo(PLAZOS[0]); setTab("tarjeta");
+  };
+
+  const pagar = () => {
+    const monto = parseFloat(inputPago);
+    if (!monto || monto <= 0) { toast$("Ingresa un monto válido","err"); return; }
+    if (monto > totalDeuda + 1) { toast$("El monto excede tu deuda","err"); return; }
+    setPagos(prev => [...prev, { fecha:new Date(fecha), monto }]);
+    toast$(`💸 Pago de ${mxn(monto)} registrado`);
+    setInputPago("");
+  };
+
+  const cats  = ["Todos", ...new Set(PRODUCTOS.map(p => p.cat))];
+  const prods = filtro === "Todos" ? PRODUCTOS : PRODUCTOS.filter(p => p.cat === filtro);
+
+  const resetear = () => { setPantalla("setup"); setPerfil(null); setCompras([]); setPagos([]); setFecha(new Date(FECHA_INICIO)); setTab("tarjeta"); };
+
+  const focus7 = e => { e.target.style.borderColor="#7c3aed"; };
+  const blur7  = e => { e.target.style.borderColor="#e5e7eb"; };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PANTALLA: SETUP
+  ══════════════════════════════════════════════════════════════════════ */
+  if (pantalla === "setup") return (
+    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#eff6ff,#f5f3ff)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:"'Outfit',sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');*{box-sizing:border-box}`}</style>
+
+      <div style={{ width:"100%", maxWidth:500, background:"white", borderRadius:24, padding:"40px 36px", boxShadow:"0 24px 64px rgba(99,102,241,0.14)" }}>
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ fontSize:46, marginBottom:8 }}>💳</div>
+          <h1 style={{ fontSize:28, fontWeight:800, color:"#1e1b4b", margin:0 }}>EduCard</h1>
+          <p style={{ color:"#6b7280", fontSize:13, marginTop:6, lineHeight:1.5 }}>Simulador de tarjeta de crédito · Bachillerato</p>
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#374151", marginBottom:8, textTransform:"uppercase", letterSpacing:0.5 }}>Tu nombre (aparecerá en tu tarjeta)</label>
+          <input value={inputNombre} onChange={e=>setInputNombre(e.target.value)} placeholder="Ej. María García López" style={S.inp} maxLength={25} onFocus={focus7} onBlur={blur7} onKeyDown={e=>e.key==="Enter"&&activar()} />
+        </div>
+
+        <div style={{ marginBottom:26 }}>
+          <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#374151", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>Color de tu tarjeta</label>
+          <div style={{ display:"flex", gap:8 }}>
+            {COLORES.map(c => (
+              <button key={c.id} onClick={()=>setColorElegido(c.id)} style={{ flex:1, padding:"8px 4px", borderRadius:10, cursor:"pointer", border:`2px solid ${colorElegido===c.id?"#7c3aed":"transparent"}`, background:colorElegido===c.id?"#f5f3ff":"#f9fafb" }}>
+                <div style={{ height:20, borderRadius:5, background:c.grad, marginBottom:4 }}/>
+                <div style={{ fontSize:10, color:colorElegido===c.id?"#7c3aed":"#6b7280", fontWeight:600 }}>{c.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display:"flex", justifyContent:"center", marginBottom:28 }}>
+          <TarjetaVisual nombre={inputNombre.toUpperCase()||"TU NOMBRE"} colorId={colorElegido} ultimos4="0000" />
+        </div>
+
+        {toast?.tipo==="err" && (
+          <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:10, padding:"10px 14px", color:"#dc2626", fontSize:13, marginBottom:14 }}>{toast.msg}</div>
+        )}
+
+        <button onClick={activar} style={S.prim({ width:"100%", padding:14, fontSize:15, borderRadius:12, boxShadow:"0 6px 20px rgba(124,58,237,0.35)" })}>
+          ✨ Activar mi EduCard
+        </button>
+        <p style={{ textAlign:"center", fontSize:11, color:"#9ca3af", marginTop:12 }}>
+          🔒 Simulación educativa · Ningún dato real es procesado
+        </p>
+      </div>
+    </div>
+  );
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PANTALLA: APP
+  ══════════════════════════════════════════════════════════════════════ */
+  return (
+    <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#eff6ff,#f5f3ff)", fontFamily:"'Outfit',sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+        *{box-sizing:border-box} input:focus{outline:none}
+        @keyframes tIn{from{transform:translateX(12px);opacity:0}to{transform:translateX(0);opacity:1}}
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-thumb{background:#c4b5fd;border-radius:3px}
+        ::-webkit-scrollbar-track{background:#f1f5f9}
+        button:active{opacity:.85}
+      `}</style>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position:"fixed", top:16, right:16, zIndex:9999, background:toast.tipo==="err"?"#fef2f2":"#f0fdf4", border:`1px solid ${toast.tipo==="err"?"#fecaca":"#bbf7d0"}`, color:toast.tipo==="err"?"#dc2626":"#15803d", padding:"10px 16px", borderRadius:10, fontSize:13, fontWeight:500, boxShadow:"0 4px 16px rgba(0,0,0,0.1)", maxWidth:300, animation:"tIn .25s ease" }}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Modal checkout */}
+      {checkout && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:500, padding:16 }}>
+          <div style={{ background:"white", borderRadius:20, padding:"26px 22px", maxWidth:420, width:"100%", boxShadow:"0 24px 60px rgba(0,0,0,0.25)" }}>
+            <div style={{ textAlign:"center", marginBottom:18 }}>
+              <div style={{ fontSize:52, marginBottom:8 }}>{checkout.ico}</div>
+              <div style={{ fontSize:18, fontWeight:700, color:"#1e1b4b" }}>{checkout.nombre}</div>
+              <div style={{ fontSize:12, color:"#9ca3af" }}>{checkout.tienda}</div>
+              <div style={{ fontSize:26, fontWeight:800, color:"#7c3aed", marginTop:6 }}>{mxn(checkout.precio)}</div>
+            </div>
+
+            <div style={{ fontSize:11, fontWeight:700, color:"#374151", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>Forma de pago:</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:7, marginBottom:18 }}>
+              {PLAZOS.map(opt => {
+                const tc = opt.tipo==="mci" ? checkout.precio*(1+opt.tasa*opt.n) : checkout.precio;
+                const m  = opt.n===1 ? tc : tc/opt.n;
+                const sel = plazo.n===opt.n;
+                return (
+                  <button key={opt.n} onClick={()=>setPlazo(opt)} style={{ padding:"9px 12px", borderRadius:10, cursor:"pointer", textAlign:"left", border:`2px solid ${sel?"#7c3aed":"#e5e7eb"}`, background:sel?"#f5f3ff":"white", fontFamily:"'Outfit',sans-serif", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:600, color:sel?"#7c3aed":"#1e1b4b" }}>{opt.label}</div>
+                      <div style={{ fontSize:11, color:opt.tipo==="mci"?"#ef4444":"#16a34a" }}>{opt.info}</div>
+                    </div>
+                    {opt.n>1 && (
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ fontSize:12, color:"#6b7280" }}>{mxn(m)}/mes</div>
+                        {opt.tipo==="mci" && <div style={{ fontSize:10, color:"#ef4444" }}>Total: {mxn(tc)}</div>}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ background:"#f9fafb", borderRadius:8, padding:"9px 12px", fontSize:12, marginBottom:16 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", color:"#6b7280", marginBottom:2 }}>
+                <span>Crédito disponible</span><span style={{ fontWeight:500, color:"#1e1b4b" }}>{mxn(disponible)}</span>
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", color:"#6b7280" }}>
+                <span>Quedaría disponible</span>
+                <span style={{ fontWeight:500, color:disponible-checkout.precio<0?"#dc2626":"#16a34a" }}>{mxn(disponible-checkout.precio)}</span>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>setCheckout(null)} style={S.sec({ flex:1, padding:11 })}>Cancelar</button>
+              <button onClick={confirmar} style={S.prim({ flex:2, padding:11, fontSize:14 })}>Confirmar compra</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Banner vencido */}
+      {estaVencido && (
+        <div style={{ background:"linear-gradient(135deg,#b91c1c,#dc2626)", color:"white", padding:"9px 20px", textAlign:"center", fontSize:13, fontWeight:500 }}>
+          ⚠️ Pago vencido hace <strong>{diasVencidos} días</strong> · Intereses acumulados: <strong>{mxn(intereses)}</strong> · CAT: {CAT_ANUAL}%
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ background:"white", borderBottom:"1px solid #e5e7eb", padding:"10px 18px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:20 }}>💳</span>
+          <span style={{ fontSize:17, fontWeight:800, color:"#1e1b4b" }}>EduCard</span>
+          <span style={{ background:"#f5f3ff", color:"#7c3aed", fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20 }}>SIMULADOR</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={{ fontSize:12, color:"#6b7280" }}>📅 {fechaLarga(fecha)}</span>
+          {[{l:"+1d",d:1},{l:"+7d",d:7},{l:"+30d",d:30}].map(b=>(
+            <button key={b.l} onClick={()=>setFecha(x=>addDias(x,b.d))} style={S.sec({ padding:"4px 9px", fontSize:11 })}>{b.l}</button>
+          ))}
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:13, fontWeight:500, color:"#374151" }}>{perfil.nombre}</span>
+          <button onClick={resetear} style={S.sec({ fontSize:11, padding:"4px 9px" })}>⟳ Reiniciar</button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ background:"white", borderBottom:"1px solid #e5e7eb", padding:"5px 18px", display:"flex", gap:2, overflowX:"auto" }}>
+        {[{id:"tarjeta",l:"💳 Mi Tarjeta"},{id:"tienda",l:"🛍️ Tienda"},{id:"estado",l:"📊 Estado de Cuenta"},{id:"ciclo",l:"📅 Ciclo de Pago"},{id:"cat",l:"⚠️ Simulador CAT"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={S.tab(tab===t.id)}>{t.l}</button>
+        ))}
+      </div>
+
+      <div style={{ padding:"18px", maxWidth:900, margin:"0 auto" }}>
+
+        {/* ═══════ TAB: MI TARJETA ══════════════════════════════════════ */}
+        {tab==="tarjeta" && (
+          <div>
+            <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1.2fr) minmax(0,1fr)", gap:18, marginBottom:18 }}>
+              <div>
+                <div style={{ display:"flex", justifyContent:"center", marginBottom:14 }}>
+                  <TarjetaVisual nombre={perfil.nombre} colorId={perfil.color} ultimos4={ultimos4} />
+                </div>
+                <div style={S.card()}>
+                  <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:3 }}>Crédito disponible</div>
+                  <div style={{ fontSize:26, fontWeight:800, color:"#16a34a", marginBottom:8 }}>{mxn(disponible)}</div>
+                  <div style={{ background:"#f3f4f6", borderRadius:8, height:8, overflow:"hidden" }}>
+                    <div style={{ width:`${Math.min(100,(saldoTotal/LIMITE_CREDITO)*100)}%`, height:"100%", borderRadius:8, transition:"width 0.6s", background:saldoTotal/LIMITE_CREDITO>.8?"linear-gradient(90deg,#f97316,#ef4444)":"linear-gradient(90deg,#7c3aed,#3b82f6)" }}/>
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#9ca3af", marginTop:5 }}>
+                    <span>Utilizado: {mxn(saldoTotal)}</span><span>Límite: {mxn(LIMITE_CREDITO)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                <div style={S.card()}>
+                  <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:3 }}>Saldo a pagar</div>
+                  <div style={{ fontSize:28, fontWeight:800, color:estaVencido?"#dc2626":"#1e1b4b" }}>{mxn(totalDeuda)}</div>
+                  {estaVencido && <div style={{ fontSize:11, color:"#dc2626", marginTop:3 }}>Incluye {mxn(intereses)} en intereses moratorios</div>}
+                </div>
+
+                {saldoTotal>0 ? (
+                  <div style={S.card({ background:estaVencido?"#fff1f2":"#fffbeb", border:`1px solid ${estaVencido?"#fecaca":"#fde68a"}` })}>
+                    <div style={{ fontSize:10, fontWeight:700, color:estaVencido?"#b91c1c":"#92400e", textTransform:"uppercase", letterSpacing:0.5, marginBottom:3 }}>
+                      {estaVencido?"⚠️ Pago vencido":"💡 Pago mínimo"}
+                    </div>
+                    <div style={{ fontSize:22, fontWeight:800, color:estaVencido?"#dc2626":"#1e1b4b" }}>{mxn(pagoMin)}</div>
+                    <div style={{ fontSize:11, color:"#6b7280", marginTop:3 }}>{estaVencido?`${diasVencidos}d vencido · CAT ${CAT_ANUAL}%`:`Límite: ${fechaLarga(fechaLimite)}`}</div>
+                    <button onClick={()=>setTab("estado")} style={S.prim({ marginTop:10, padding:"6px 12px", fontSize:11 })}>Ver estado de cuenta →</button>
+                  </div>
+                ) : (
+                  <div style={S.card({ background:"linear-gradient(135deg,#f0fdf4,#dcfce7)" })}>
+                    <div style={{ fontSize:26, marginBottom:6 }}>✅</div>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#15803d" }}>¡Sin deuda!</div>
+                    <div style={{ fontSize:12, color:"#16a34a", marginTop:3 }}>Tu tarjeta está al corriente.</div>
+                  </div>
+                )}
+
+                <div style={S.card()}>
+                  <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Próximas fechas clave</div>
+                  {[{ico:"✂️",label:"Próximo corte",date:proximoCorte,c:"#7c3aed"},{ico:"💳",label:"Fecha límite",date:fechaLimite,c:estaVencido?"#dc2626":"#d97706"}].map(r=>(
+                    <div key={r.label} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:5 }}>
+                      <span style={{ color:"#6b7280" }}>{r.ico} {r.label}</span>
+                      <span style={{ fontWeight:600, color:r.c }}>{fechaCorta(r.date)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {compras.length>0 ? (
+              <div style={S.card()}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                  <span style={{ fontSize:14, fontWeight:700, color:"#1e1b4b" }}>Últimas compras</span>
+                  <button onClick={()=>setTab("estado")} style={S.sec({ fontSize:11, padding:"5px 9px" })}>Ver todas</button>
+                </div>
+                {compras.slice(-4).reverse().map(c=>(
+                  <div key={c.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", borderRadius:9, background:"#f9fafb", marginBottom:6 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+                      <span style={{ fontSize:20 }}>{c.ico}</span>
+                      <div>
+                        <div style={{ fontSize:12, fontWeight:500, color:"#1e1b4b" }}>{c.nombre}</div>
+                        <div style={{ fontSize:10, color:"#9ca3af" }}>{c.tienda} · {fechaCorta(c.fecha)}</div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:12, fontWeight:700, color:"#1e1b4b" }}>{mxn(c.monto)}</div>
+                      <div style={{ fontSize:10, color:c.tipo==="mci"?"#ef4444":c.tipo==="msi"?"#16a34a":"#7c3aed" }}>
+                        {c.n===1?"Contado":`${c.n} ${c.tipo.toUpperCase()} · ${mxn(c.mensualidad)}/mes`}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ ...S.card(), textAlign:"center", padding:"36px 20px" }}>
+                <div style={{ fontSize:38, marginBottom:10 }}>🛍️</div>
+                <div style={{ fontSize:15, fontWeight:600, color:"#374151" }}>Sin compras aún</div>
+                <div style={{ fontSize:12, color:"#9ca3af", marginTop:4, marginBottom:16 }}>Ve a la tienda y realiza tu primera compra</div>
+                <button onClick={()=>setTab("tienda")} style={S.prim()}>Ir a la tienda →</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════ TAB: TIENDA ══════════════════════════════════════════ */}
+        {tab==="tienda" && (
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+              <h2 style={{ margin:0, fontSize:20, fontWeight:800, color:"#1e1b4b" }}>🛍️ Tienda en Línea</h2>
+              <div style={S.card({ padding:"7px 14px", fontSize:13 })}>Disponible: <strong style={{ color:"#16a34a" }}>{mxn(disponible)}</strong></div>
+            </div>
+
+            <div style={{ display:"flex", gap:7, flexWrap:"wrap", marginBottom:16 }}>
+              {cats.map(c=>(
+                <button key={c} onClick={()=>setFiltro(c)} style={{ padding:"5px 13px", borderRadius:20, border:"none", cursor:"pointer", fontSize:12, fontWeight:500, background:filtro===c?"linear-gradient(135deg,#7c3aed,#6d28d9)":"white", color:filtro===c?"white":"#374151", boxShadow:"0 2px 6px rgba(0,0,0,0.06)" }}>{c}</button>
+              ))}
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))", gap:12 }}>
+              {prods.map(p => {
+                const ok = p.precio <= disponible;
+                return (
+                  <div key={p.id} onClick={()=>ok&&(setCheckout(p),setPlazo(PLAZOS[0]))}
+                    style={{ background:"white", borderRadius:14, padding:"18px 12px", textAlign:"center", boxShadow:"0 2px 10px rgba(0,0,0,0.06)", cursor:ok?"pointer":"default", opacity:ok?1:0.55, transition:"transform .2s, box-shadow .2s" }}
+                    onMouseEnter={e=>ok&&(e.currentTarget.style.transform="translateY(-2px)",e.currentTarget.style.boxShadow="0 8px 20px rgba(0,0,0,0.1)")}
+                    onMouseLeave={e=>(e.currentTarget.style.transform="none",e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,0.06)")}
+                  >
+                    <div style={{ fontSize:32, marginBottom:7 }}>{p.ico}</div>
+                    <div style={{ fontSize:12, fontWeight:600, color:"#1e1b4b", marginBottom:3, lineHeight:1.3 }}>{p.nombre}</div>
+                    <div style={{ fontSize:10, color:"#9ca3af", marginBottom:9 }}>{p.tienda}</div>
+                    <div style={{ fontSize:16, fontWeight:800, color:"#7c3aed", marginBottom:10 }}>{mxn(p.precio)}</div>
+                    <div style={{ fontSize:11, fontWeight:600, padding:"5px", borderRadius:6, background:ok?"linear-gradient(135deg,#7c3aed,#6d28d9)":"#e5e7eb", color:ok?"white":"#9ca3af" }}>
+                      {ok?"Comprar":"Sin crédito"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════ TAB: ESTADO DE CUENTA ════════════════════════════════ */}
+        {tab==="estado" && (
+          <div>
+            <h2 style={{ margin:"0 0 16px", fontSize:20, fontWeight:800, color:"#1e1b4b" }}>📊 Estado de Cuenta</h2>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:18 }}>
+              {[{label:"Saldo total",v:mxn(totalDeuda),c:"#1e1b4b"},{label:"Crédito disponible",v:mxn(disponible),c:"#16a34a"},{label:"Pago mínimo",v:mxn(saldoTotal>0?pagoMin:0),c:estaVencido?"#dc2626":"#d97706"}].map(s=>(
+                <div key={s.label} style={S.card()}>
+                  <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginBottom:3 }}>{s.label}</div>
+                  <div style={{ fontSize:20, fontWeight:800, color:s.c }}>{s.v}</div>
+                </div>
+              ))}
+            </div>
+
+            {compras.length>0 ? (
+              <div style={{ background:"white", borderRadius:14, overflow:"hidden", boxShadow:"0 2px 12px rgba(0,0,0,0.07)", marginBottom:18 }}>
+                <div style={{ padding:"12px 16px", borderBottom:"1px solid #f3f4f6", fontSize:14, fontWeight:700, color:"#1e1b4b" }}>Movimientos</div>
+                <div style={{ overflowX:"auto" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                    <thead><tr style={{ background:"#f9fafb" }}>{["","Producto","Tienda","Fecha","Monto","Plazo","Mensualidad","Tipo"].map(h=><th key={h} style={{ padding:"8px 12px", textAlign:"left", fontWeight:600, color:"#6b7280", fontSize:11, whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {compras.map(c=>(
+                        <tr key={c.id} style={{ borderTop:"1px solid #f3f4f6" }}>
+                          <td style={{ padding:"10px 12px", fontSize:18 }}>{c.ico}</td>
+                          <td style={{ padding:"10px 12px", fontWeight:500, color:"#1e1b4b" }}>{c.nombre}</td>
+                          <td style={{ padding:"10px 12px", color:"#6b7280" }}>{c.tienda}</td>
+                          <td style={{ padding:"10px 12px", color:"#6b7280", whiteSpace:"nowrap" }}>{fechaCorta(c.fecha)}</td>
+                          <td style={{ padding:"10px 12px", fontWeight:700, color:"#1e1b4b" }}>{mxn(c.monto)}</td>
+                          <td style={{ padding:"10px 12px" }}>{c.n===1?"Contado":`${c.n} meses`}</td>
+                          <td style={{ padding:"10px 12px", color:"#7c3aed", fontWeight:500 }}>{c.n===1?"—":mxn(c.mensualidad)}</td>
+                          <td style={{ padding:"10px 12px" }}>
+                            <span style={{ padding:"2px 7px", borderRadius:10, fontSize:10, fontWeight:700, background:c.tipo==="mci"?"#fef2f2":c.tipo==="msi"?"#f0fdf4":"#f5f3ff", color:c.tipo==="mci"?"#dc2626":c.tipo==="msi"?"#16a34a":"#7c3aed" }}>{c.tipo.toUpperCase()}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div style={{ ...S.card(), textAlign:"center", padding:"36px 20px", marginBottom:18, color:"#9ca3af" }}>📋 Sin movimientos aún</div>
+            )}
+
+            {saldoTotal>0 && (
+              <div style={S.card()}>
+                <div style={{ fontSize:14, fontWeight:700, color:"#1e1b4b", marginBottom:12 }}>💸 Realizar un pago</div>
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:12 }}>
+                  <input type="number" value={inputPago} onChange={e=>setInputPago(e.target.value)} placeholder={`Mínimo: ${mxn(pagoMin)}`} style={{ ...S.inp, flex:1, minWidth:160 }} onFocus={focus7} onBlur={blur7} />
+                  <button onClick={pagar} style={S.prim({ padding:"10px 18px" })}>Pagar</button>
+                </div>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  <button onClick={()=>setInputPago(pagoMin.toFixed(2))} style={S.sec({ fontSize:12, padding:"6px 11px" })}>Pago mínimo ({mxn(pagoMin)})</button>
+                  <button onClick={()=>setInputPago(totalDeuda.toFixed(2))} style={S.sec({ fontSize:12, padding:"6px 11px" })}>Pago total ({mxn(totalDeuda)})</button>
+                </div>
+                {pagos.length>0 && (
+                  <div style={{ marginTop:14, paddingTop:14, borderTop:"1px solid #f3f4f6" }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:"#374151", marginBottom:8 }}>Historial de pagos</div>
+                    {pagos.map((p,i)=>(
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#6b7280", padding:"3px 0" }}>
+                        <span>✅ {fechaCorta(p.fecha)}</span>
+                        <span style={{ fontWeight:600, color:"#16a34a" }}>+{mxn(p.monto)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════ TAB: CICLO DE PAGO ═══════════════════════════════════ */}
+        {tab==="ciclo" && (
+          <div>
+            <h2 style={{ margin:"0 0 6px", fontSize:20, fontWeight:800, color:"#1e1b4b" }}>📅 Ciclo de Pago</h2>
+            <p style={{ margin:"0 0 18px", color:"#6b7280", fontSize:13 }}>Entiende cómo funciona el ciclo mensual de tu tarjeta</p>
+
+            <div style={{ ...S.card(), marginBottom:16, padding:"26px 22px" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 24px 1fr 24px 1fr", alignItems:"center", gap:6 }}>
+                {[
+                  { ico:"✂️", t:"Fecha de Corte",   date:corteAnt,     sub:`Día ${DIA_CORTE} c/mes`,                               c:"#7c3aed",                             desc:"Se genera tu estado de cuenta"    },
+                  null,
+                  { ico:estaVencido?"❌":"💰", t:"Fecha Límite", date:fechaLimite, sub:estaVencido?`Vencido ${diasVencidos}d`:`Quedan ${Math.max(0,difDias(fecha,fechaLimite))}d`, c:estaVencido?"#dc2626":"#d97706", desc:"Último día sin intereses"         },
+                  null,
+                  { ico:"📋", t:"Próximo Corte",    date:proximoCorte, sub:`En ${difDias(fecha,proximoCorte)} días`,               c:"#0ea5e9",                             desc:"Inicio del siguiente ciclo"       },
+                ].map((item,i)=>
+                  item===null
+                    ? <div key={i} style={{ height:2, background:"linear-gradient(90deg,#c4b5fd,#93c5fd)" }}/>
+                    : (
+                      <div key={i} style={{ textAlign:"center" }}>
+                        <div style={{ width:46, height:46, borderRadius:"50%", background:`${item.c}20`, border:`2px solid ${item.c}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, margin:"0 auto 8px" }}>{item.ico}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:"#1e1b4b" }}>{item.t}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:item.c, margin:"2px 0" }}>{fechaLarga(item.date)}</div>
+                        <div style={{ fontSize:10, color:"#9ca3af" }}>{item.sub}</div>
+                        <div style={{ fontSize:10, color:"#6b7280", marginTop:2 }}>{item.desc}</div>
+                      </div>
+                    )
+                )}
+              </div>
+              <div style={{ marginTop:18, background:"#f5f3ff", borderRadius:10, padding:"9px 13px", display:"flex", alignItems:"center", gap:8, fontSize:13 }}>
+                <div style={{ width:7, height:7, borderRadius:"50%", background:"#7c3aed", flexShrink:0 }}/>
+                <span><strong>Hoy:</strong> {fechaLarga(fecha)}{estaVencido&&<span style={{color:"#dc2626"}}> — ⚠️ Pago vencido {diasVencidos} días</span>}</span>
+              </div>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
+              {[
+                { ico:"✂️", t:"¿Qué es la fecha de corte?",   c:`El día en que el banco registra todos tus movimientos del mes y genera tu estado de cuenta. Para EduCard cae el día ${DIA_CORTE} de cada mes. Las compras posteriores van al siguiente ciclo.` },
+                { ico:"💳", t:"¿Qué es la fecha límite?",     c:`El plazo máximo para pagar sin generar intereses. En México la ley exige mínimo 20 días entre corte y límite. Pagar solo el mínimo genera intereses del ${(T_MENS*100).toFixed(2)}% mensual sobre el saldo restante.` },
+                { ico:"📊", t:"Meses Sin Intereses (MSI)",    c:"El banco divide tu compra en cuotas fijas sin costo adicional. Ideal si pagas puntualmente. EduCard ofrece 3 y 6 MSI. El comercio absorbe el costo financiero." },
+                { ico:"⚠️", t:"Meses Con Intereses (MCI)",   c:"Se aplica una tasa mensual sobre el saldo financiado. Aunque parecen convenientes, el costo total puede ser significativamente mayor al precio original." },
+              ].map(c=>(
+                <div key={c.t} style={S.card()}>
+                  <div style={{ fontSize:18, marginBottom:5 }}>{c.ico}</div>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#1e1b4b", marginBottom:5 }}>{c.t}</div>
+                  <div style={{ fontSize:11, color:"#6b7280", lineHeight:1.65 }}>{c.c}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={S.card()}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#1e1b4b", marginBottom:12 }}>⏩ Simula el paso del tiempo</div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:8 }}>
+                {[{l:"Mañana",d:1},{l:"+3 días",d:3},{l:"1 semana",d:7},{l:"2 semanas",d:14},{l:"1 mes",d:30}].map(b=>(
+                  <button key={b.l} onClick={()=>setFecha(x=>addDias(x,b.d))} style={S.sec({ fontSize:12, padding:"6px 11px" })}>{b.l}</button>
+                ))}
+                {difDias(fecha,fechaLimite)>0 && (
+                  <button onClick={()=>setFecha(fechaLimite)} style={S.sec({ fontSize:12, padding:"6px 11px", border:"1px solid #d97706", color:"#d97706" })}>Ir a fecha límite</button>
+                )}
+                {difDias(fecha,proximoCorte)>0 && (
+                  <button onClick={()=>setFecha(proximoCorte)} style={S.sec({ fontSize:12, padding:"6px 11px", border:"1px solid #7c3aed", color:"#7c3aed" })}>Ir al próximo corte</button>
+                )}
+              </div>
+              <div style={{ fontSize:11, color:"#9ca3af" }}>Prueba avanzar la fecha sin haber pagado para ver cómo se acumulan los intereses moratorios.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════ TAB: SIMULADOR CAT ═══════════════════════════════════ */}
+        {tab==="cat" && (
+          <div>
+            <h2 style={{ margin:"0 0 6px", fontSize:20, fontWeight:800, color:"#1e1b4b" }}>⚠️ Simulador CAT</h2>
+            <p style={{ margin:"0 0 18px", color:"#6b7280", fontSize:13 }}>Descubre cuánto cuesta en realidad no pagar a tiempo</p>
+
+            <div style={{ background:"linear-gradient(135deg,#fef3c7,#fde68a)", borderRadius:14, padding:"16px 18px", marginBottom:18, border:"1px solid #fbbf24" }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"#92400e", marginBottom:6 }}>¿Qué es el CAT?</div>
+              <div style={{ fontSize:13, color:"#78350f", lineHeight:1.7 }}>
+                El <strong>Costo Anual Total (CAT)</strong> es el indicador oficial en México que mide el costo real de un crédito, incluyendo tasa de interés, comisiones y seguros. EduCard tiene un CAT de <strong>{CAT_ANUAL}%</strong> — equivalente a una tasa mensual de <strong>{(T_MENS*100).toFixed(2)}%</strong> y una tasa moratoria de <strong>{(T_MOR*30*100).toFixed(2)}% mensual</strong> en caso de incumplimiento.
+              </div>
+            </div>
+
+            <div style={{ ...S.card(), marginBottom:16 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"#1e1b4b", marginBottom:16 }}>Calculadora de intereses moratorios</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:18, marginBottom:18 }}>
+                <div>
+                  <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:0.5, marginBottom:7 }}>Saldo a simular (MXN)</label>
+                  <input type="number" value={catSaldo} onChange={e=>setCatSaldo(parseFloat(e.target.value)||0)} style={S.inp} onFocus={focus7} onBlur={blur7} />
+                  {saldoTotal>0 && <button onClick={()=>setCatSaldo(Math.round(saldoTotal))} style={S.sec({ fontSize:11, padding:"5px 9px", marginTop:7 })}>Usar mi saldo ({mxn(saldoTotal)})</button>}
+                </div>
+                <div>
+                  <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:0.5, marginBottom:7 }}>
+                    Días de retraso: <strong style={{ color:"#dc2626" }}>{catDias}</strong>
+                  </label>
+                  <input type="range" min={1} max={365} value={catDias} onChange={e=>setCatDias(parseInt(e.target.value))} style={{ width:"100%", accentColor:"#7c3aed", marginTop:6 }} />
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"#9ca3af" }}><span>1 día</span><span>6 meses</span><span>1 año</span></div>
+                </div>
+              </div>
+
+              {(()=>{
+                const bal = Math.max(catSaldo, 1);
+                const intTotal = bal * T_MOR * catDias;
+                const totalDeber = bal + intTotal;
+                const pct = (intTotal/bal)*100;
+                return (
+                  <div>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:14 }}>
+                      {[
+                        { label:"Interés diario", v:mxn(bal*T_MOR), bg:"#fff7ed", c:"#c2410c" },
+                        { label:`Intereses (${catDias}d)`, v:mxn(intTotal), bg:"#fef2f2", c:"#dc2626" },
+                        { label:"Total a pagar", v:mxn(totalDeber), bg:"#3b0764", c:"white" },
+                      ].map(r=>(
+                        <div key={r.label} style={{ background:r.bg, borderRadius:10, padding:"12px", textAlign:"center" }}>
+                          <div style={{ fontSize:10, color:r.c, marginBottom:3, fontWeight:600, opacity:.85 }}>{r.label}</div>
+                          <div style={{ fontSize:15, fontWeight:800, color:r.c }}>{r.v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ marginBottom:12 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#6b7280", marginBottom:4 }}>
+                        <span>Capital: {mxn(bal)}</span><span>Intereses: {mxn(intTotal)} (+{pct.toFixed(0)}%)</span>
+                      </div>
+                      <div style={{ height:14, background:"#f3f4f6", borderRadius:8, overflow:"hidden" }}>
+                        <div style={{ display:"flex", height:"100%" }}>
+                          <div style={{ width:`${(bal/totalDeber)*100}%`, background:"linear-gradient(90deg,#7c3aed,#6d28d9)", transition:"width .4s" }}/>
+                          <div style={{ flex:1, background:"linear-gradient(90deg,#ef4444,#dc2626)" }}/>
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", gap:14, marginTop:4, fontSize:10, color:"#6b7280" }}>
+                        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8,height:8,borderRadius:2,background:"#7c3aed",display:"inline-block" }}/> Capital</span>
+                        <span style={{ display:"flex", alignItems:"center", gap:4 }}><span style={{ width:8,height:8,borderRadius:2,background:"#dc2626",display:"inline-block" }}/> Intereses moratorios</span>
+                      </div>
+                    </div>
+                    <div style={{ background:"#f5f3ff", borderRadius:9, padding:"11px 13px", fontSize:12, color:"#5b21b6", lineHeight:1.65 }}>
+                      💡 Con {mxn(bal)} de saldo y <strong>{catDias} días</strong> de retraso, pagarás <strong>{mxn(intTotal)}</strong> solo en intereses — un <strong>{pct.toFixed(0)}% adicional</strong> sobre el valor original de tus compras.
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {catSaldo>0 && (
+              <div style={S.card()}>
+                <div style={{ fontSize:14, fontWeight:700, color:"#1e1b4b", marginBottom:14 }}>📈 ¿Qué pasa si solo pago el mínimo mes a mes?</div>
+                {(()=>{
+                  let bal=catSaldo, meses=0, totalPagado=0, totalInt=0;
+                  while(bal>10&&meses<120){ meses++; const int=bal*T_MENS; bal+=int; totalInt+=int; const pmt=Math.max(200,bal*.015+int); totalPagado+=pmt; bal=Math.max(0,bal-pmt); }
+                  return (
+                    <div>
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:12 }}>
+                        {[
+                          { label:"Meses para liquidar", v:`${meses} meses`, sub:`${(meses/12).toFixed(1)} años`, h:false },
+                          { label:"Total pagado",        v:mxn(totalPagado), sub:`vs. ${mxn(catSaldo)} original`, h:false },
+                          { label:"Solo en intereses",   v:mxn(totalInt),    sub:`+${((totalInt/catSaldo)*100).toFixed(0)}%`, h:true },
+                        ].map(r=>(
+                          <div key={r.label} style={{ background:r.h?"#fef2f2":"#f9fafb", borderRadius:10, padding:"11px", textAlign:"center" }}>
+                            <div style={{ fontSize:10, color:"#6b7280", marginBottom:3 }}>{r.label}</div>
+                            <div style={{ fontSize:16, fontWeight:800, color:r.h?"#dc2626":"#1e1b4b" }}>{r.v}</div>
+                            <div style={{ fontSize:10, color:"#9ca3af" }}>{r.sub}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ background:"#fef2f2", borderRadius:9, padding:"11px 13px", fontSize:12, color:"#991b1b", lineHeight:1.65 }}>
+                        ⚠️ Pagando solo el mínimo sobre {mxn(catSaldo)}, tardarías <strong>{meses} meses</strong> en liquidar y pagarías <strong>{mxn(totalInt)}</strong> extra en intereses. El total sería <strong>{mxn(totalPagado)}</strong> por algo que originalmente costaba {mxn(catSaldo)}.
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
